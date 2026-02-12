@@ -38,6 +38,15 @@ Este archivo registra los cambios funcionales y tecnicos realizados en este proy
   - Se fortalecio `removeAccents()` en `src/FuripsJobManager.php` para normalizar cadenas en UTF-8/latin1 y limpiar patrones mojibake comunes.
   - Se agrega transliteracion a ASCII para evitar caracteres corruptos en nombres (ejemplo reportado: `PEÏ¿½ARANDA`).
 
+### Cierre de promocion a main (2026-02-12)
+
+- Se promovieron a `main` los cambios trabajados en la rama de copia con mensajes en espanol:
+  - Commit `90e4814`: `Mover filtrado principal de FURIPS a Firebird (FACTSER)`.
+  - Commit `40ca88e`: `Mejorar interfaz de carga y normalizar codificacion de texto FURIPS`.
+- Estado final:
+  - `main` queda actualizado y publicado en GitHub (`origin/main`).
+  - La rama `feature/filtro-firebird-factser-2026-02-12` se conserva como referencia historica.
+
 ## Convencion sugerida para siguientes cambios
 
 - Registrar fecha (`YYYY-MM-DD`), archivo(s) tocados y motivo del ajuste.
