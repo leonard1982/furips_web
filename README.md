@@ -27,7 +27,7 @@ Front-end PHP que replica la lógica del `furips2025.jar` sin depender de Java. 
 
 1. Abre `index.php` en el navegador.  
 2. El formulario carga las entidades desde Firebird y permite escribir rango y entidad.  
-3. Al generar, el backend escribe el plan, lanza las consultas MySQL/Firebird, construye los FURIPS y los copia a `storage/exports`.  
+3. Al generar, el backend escribe el plan, consulta primero Firebird para obtener facturas por rango/entidad y luego cruza en MySQL por `polizas_facturas.nfactura_tns` para construir los FURIPS y copiarlos a `storage/exports`.  
 4. La UI muestra la barra de progreso y ofrece enlaces de descarga (`download.php?jobId=X&file=Y`).  
 5. `storage/jobs/<jobId>.json` mantiene el estado y `storage/logs/<jobId>.log` guarda la traza completa.
 
