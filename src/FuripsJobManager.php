@@ -56,8 +56,11 @@ final class FuripsJobManager
         $jobId = bin2hex(random_bytes(8));
         $suffix = $this->buildSuffix();
         $planContent = $start . '|' . $end . '|' . $entityCode . '|' . $suffix . PHP_EOL;
+        $entityName = $this->resolveEntityName($entityCode);
 
         $this->sqlLogger = new SqlLogger($this->sqlDir, $jobId);
+        $this->sqlLogger->writeHeader($jobId, $entityCode, $entityName, $start, $end);
+        $sqlLogPath = $this->sqlLogger->getPath();
         $this->mysqlConnection->setLogger($this->sqlLogger);
 
         file_put_contents($this->planFile, $planContent);
@@ -67,7 +70,9 @@ final class FuripsJobManager
             'start_date' => $start,
             'end_date' => $end,
             'entity_code' => $entityCode,
+            'entity_name' => $entityName,
             'suffix' => $suffix,
+            'sql_log' => $sqlLogPath,
             'plan' => [
                 'path' => $this->planFile,
                 'content' => trim($planContent),
@@ -127,6 +132,7 @@ final class FuripsJobManager
             'plan' => trim($planContent),
             'outputs' => $outputs,
             'log' => $logFile,
+            'sql_log' => $sqlLogPath,
         ];
     }
 
@@ -766,6 +772,30 @@ SQL;
     {
         $now = new DateTimeImmutable();
         return '540010227201' . $now->format('d') . $now->format('m') . $now->format('Y');
+    }
+
+    private function resolveEntityName(string $entityCode): string
+    {
+        $entityCode = trim($entityCode);
+        if ($entityCode === '') {
+            return '';
+        }
+
+        $safeEntityCode = str_replace("'", "''", $entityCode);
+        $sql = "select descripcion from aseguradoras where codigo_tns = '{$safeEntityCode}' limit 1";
+
+        try {
+            $rows = $this->mysqlConnection->query($sql);
+        } catch (\Throwable $exception) {
+            return $entityCode;
+        }
+
+        if (empty($rows)) {
+            return $entityCode;
+        }
+
+        $name = trim((string) ($rows[0]['descripcion'] ?? $rows[0]['DESCRIPCION'] ?? ''));
+        return $name !== '' ? $name : $entityCode;
     }
 
     private function normalizeDate(string $value): string

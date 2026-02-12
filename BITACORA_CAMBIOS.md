@@ -11,6 +11,10 @@ Este archivo registra los cambios funcionales y tecnicos realizados en este proy
 - Efecto esperado de la correccion:
   - Se elimina el corrimiento de campos desde la mitad del archivo hacia adelante.
   - Desaparece la celda vacia al final de la linea causada por `padToLength`.
+- Se amplio el log SQL por ejecucion en `storage/sql/<jobId>.sql`:
+  - Se agrega encabezado con fecha/hora de generacion, `job_id`, codigo/nombre de entidad y rango (`fecha inicio`/`fecha fin`).
+  - Cada sentencia ahora se marca con tipo de base (`DB:MYSQL` o `DB:FIREBIRD`) y tipo de operacion (`QUERY` o `EXECUTE`).
+  - Se expone la ruta del archivo SQL en el estado del job y en la respuesta de `api/generate.php` (`sql_log`).
 
 ## Convencion sugerida para siguientes cambios
 

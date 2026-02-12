@@ -45,6 +45,7 @@ try {
         'plan' => $result['plan'],
         'outputs' => $outputs,
         'log' => $result['log'],
+        'sql_log' => $result['sql_log'] ?? null,
         'message' => 'Furips generados correctamente.',
     ]);
 } catch (Throwable $exception) {

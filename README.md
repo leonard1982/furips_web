@@ -37,7 +37,7 @@ Front-end PHP que replica la lógica del `furips2025.jar` sin depender de Java. 
 - `storage/jobs`: JSON con progreso + resultados.  
 - `storage/logs`: log completo de cada ejecución.  
 - `storage/exports/<jobId>`: contiene `FURIPS1…`/`FURIPS2…` listos para descargar.  
-- `storage/sql/<jobId>.sql`: cada consulta SQL (MySQL y Firebird) ejecutada para ese job, lista para replicarse manualmente.  
+- `storage/sql/<jobId>.sql`: incluye encabezado con fecha/hora de generacion, entidad (codigo/nombre) y rango (inicio/fin), y luego cada SQL ejecutado indicando `DB:MYSQL` o `DB:FIREBIRD`.  
 - La carpeta `C:\tempo` también recibe los `.txt` originales para mantener compatibilidad con procesos que revisen ese directorio.  
 
 ## Precauciones
