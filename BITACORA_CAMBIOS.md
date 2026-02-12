@@ -30,6 +30,13 @@ Este archivo registra los cambios funcionales y tecnicos realizados en este proy
     - `FACTSER.FECASENT IS NOT NULL`
     - `FACTSER.FECANULADA IS NULL`
   - La consulta MySQL deja de filtrar por fechas y ahora cruza por `polizas_facturas.nfactura_tns IN (facturas_firebird)`.
+- Mejora UX en formulario de generacion:
+  - Se agrego un overlay centrado de espera durante la generacion (`Espere por favor` / `Estamos generando los archivos`).
+  - El overlay bloquea interacciones del formulario mientras se procesa la solicitud.
+  - Se muestra barra de progreso dentro del overlay, sincronizada con la barra de progreso existente.
+- Ajuste de codificacion de texto en salida FURIPS:
+  - Se fortalecio `removeAccents()` en `src/FuripsJobManager.php` para normalizar cadenas en UTF-8/latin1 y limpiar patrones mojibake comunes.
+  - Se agrega transliteracion a ASCII para evitar caracteres corruptos en nombres (ejemplo reportado: `PEÏ¿½ARANDA`).
 
 ## Convencion sugerida para siguientes cambios
 
