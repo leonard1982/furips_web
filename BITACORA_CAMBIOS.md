@@ -15,6 +15,21 @@ Este archivo registra los cambios funcionales y tecnicos realizados en este proy
   - Se agrega encabezado con fecha/hora de generacion, `job_id`, codigo/nombre de entidad y rango (`fecha inicio`/`fecha fin`).
   - Cada sentencia ahora se marca con tipo de base (`DB:MYSQL` o `DB:FIREBIRD`) y tipo de operacion (`QUERY` o `EXECUTE`).
   - Se expone la ruta del archivo SQL en el estado del job y en la respuesta de `api/generate.php` (`sql_log`).
+- Se publico en `main` el estado base hasta este punto en GitHub:
+  - Commit: `ad3fc1b`
+  - Fecha: `2026-02-12`
+- Se creo rama de trabajo/copia para cambios mayores de filtro:
+  - Rama: `feature/filtro-firebird-factser-2026-02-12`
+  - Base: `main` en commit `ad3fc1b`.
+- Cambio funcional mayor aplicado en rama de trabajo:
+  - El filtro principal de periodo/entidad se movio a Firebird usando `FACTSER`.
+  - Condiciones en Firebird para lista de facturas:
+    - `FACTSER.FECHA BETWEEN :inicio AND :fin`
+    - `FACTSER.CODCOMP = 'FV'`
+    - `ENTIDAD.CODIGO = :codigo_entidad`
+    - `FACTSER.FECASENT IS NOT NULL`
+    - `FACTSER.FECANULADA IS NULL`
+  - La consulta MySQL deja de filtrar por fechas y ahora cruza por `polizas_facturas.nfactura_tns IN (facturas_firebird)`.
 
 ## Convencion sugerida para siguientes cambios
 

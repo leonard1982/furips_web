@@ -142,11 +142,26 @@ final class FuripsJobManager
         if ($this->sqlLogger !== null) {
             $connection->setLogger($this->sqlLogger);
         }
+
         try {
-            $rows = $this->mysqlConnection->query($this->buildFuripsQuery($start, $end, $entityCode));
+            $facturas = $this->fetchFacturasFromFirebird($connection, $start, $end, $entityCode);
+        } catch (\Throwable $exception) {
+            throw new RuntimeException(
+                'No se pudo consultar Firebird para obtener facturas por rango/entidad. Detalle: ' . $exception->getMessage()
+            );
+        }
+
+        if ($facturas === []) {
+            $this->updateVarios($connection, 'CANTIDADFURIPS', 0);
+            fwrite($logHandle, "Sin facturas en Firebird para el rango/entidad solicitados.\n");
+            throw new RuntimeException('No se encontraron facturas en Firebird para el rango y entidad seleccionados.');
+        }
+
+        try {
+            $rows = $this->mysqlConnection->query($this->buildFuripsQuery($facturas));
         } catch (RuntimeException $exception) {
             throw new RuntimeException(
-                'No se pudo leer la tabla FURIPS (MySQL). Verifique que la base gestion_documental esté replicada y ' .
+                'No se pudo leer la tabla FURIPS (MySQL). Verifique que la base gestion_documental este replicada y ' .
                 'que las tablas necesarias existan. Detalle: ' . $exception->getMessage()
             );
         }
@@ -154,8 +169,10 @@ final class FuripsJobManager
         $total = count($rows);
         $this->updateVarios($connection, 'CANTIDADFURIPS', $total);
         if ($total === 0) {
-            fwrite($logHandle, "Sin resultados para el rango/entidad solicitados.\n");
-            throw new RuntimeException('No se encontraron FURIPS para el rango y entidad seleccionados.');
+            fwrite($logHandle, "Sin resultados en MySQL para las facturas filtradas en Firebird.\n");
+            throw new RuntimeException(
+                'No se encontraron FURIPS en MySQL para las facturas obtenidas en Firebird.'
+            );
         }
 
         $file1 = $this->tempoDir . DIRECTORY_SEPARATOR . 'FURIPS1' . $suffix . '.txt';
@@ -164,8 +181,8 @@ final class FuripsJobManager
         $handle2 = fopen($file2, 'w');
 
         foreach ($rows as $offset => $row) {
-            // Normaliza las llaves del resultado MySQL a mayúsculas para
-            // mantener compatibilidad con la lógica heredada del JAR.
+            // Normaliza las llaves del resultado MySQL a mayusculas para
+            // mantener compatibilidad con la logica heredada del JAR.
             $row = array_change_key_case($row, CASE_UPPER);
             $row['_CLINICAL'] = $this->fetchClinicalData(
                 $row['NFACTURA_TNS'] ?? '',
@@ -746,8 +763,17 @@ SQL;
         return array_pad($fields, $length, '');
     }
 
-    private function buildFuripsQuery(string $start, string $end, string $entityCode): string
+    private function buildFuripsQuery(array $facturas): string
     {
+        $facturas = $this->normalizeFacturas($facturas);
+        if ($facturas === []) {
+            return 'select 1 where 1=0';
+        }
+
+        $invoicesSql = implode(', ', array_map(static function (string $value): string {
+            return "'" . str_replace("'", "''", $value) . "'";
+        }, $facturas));
+
         return <<<SQL
 select f.id, f.cedula, f.condicion_accidentado, f.direccion_ocurrencia, f.fecha_accidente, f.hora_accidente, f.departamento, f.municipio, f.zona, f.estado_aseguramiento, mm.descripcion as marca, f.placa, f.tipo_servicio, a.codigo_tns as codigo_aseguradora, p.numero_poliza, f.vigencia_poliza_desde, f.vigencia_poliza_hasta, pf.codificacion_siras, f.cobro_excedente, f.cod_diagnostico, td.codigo as tipodoc_propietario, f.n_documento_propietario, f.apellido1_propietario, f.apellido2_propietario, f.nombre1_propietario, f.nombre2_propietario, f.nombre1_conductor, f.direccion_propietario, f.telefono_propietario, f.departamento_propietario, f.municipio_propietario, f.apellido1_conductor, f.apellido2_conductor, f.nombre1_conductor, f.nombre2_conductor, td2.codigo as tipodoc_conductor, f.victima_propietario, f.victima_conductor, f.n_documento_conductor, f.direccion_conductor, f.departamento_conductor, f.municipio_conductor, f.telefono_conductor, a2.placa as placa_amb, f.direccion_ocurrencia, f.desde, f.hasta, f.ambulancia_medicalizada, f.descripcion_accidente, m.codigo as cod_municipio, d.codigo as cod_depto, f.zona_traslados, pf.nfactura_tns, f.nombre1_propietario, pf.creado, a.descripcion, a.codigo_tns, f.hora_accidente, f.zona,
        '' as fechanac, '' as sexo, pf.inicio as fechaser, '' as horaser, pf.fin as fecha_egreso, '' as hora_egreso, '' as diagnostico_secundario,
@@ -763,9 +789,67 @@ inner join ambulancias a2 on a2.id = f.idambulancia
 inner join marca_motos mm on mm.id = f.marca
 inner join departamentos d on d.id = f.departamento
 inner join municipios m on m.id = f.municipio
-where f.fecha_accidente >= '$start' and f.fecha_accidente <= '$end' and pf.facturado = 'SI' and a.codigo_tns = '$entityCode'
-order by f.fecha_accidente
+where pf.facturado = 'SI' and pf.nfactura_tns in ($invoicesSql)
+order by pf.nfactura_tns
 SQL;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function fetchFacturasFromFirebird(
+        FirebirdConnection $connection,
+        string $start,
+        string $end,
+        string $entityCode
+    ): array {
+        $safeStart = str_replace("'", "''", trim($start));
+        $safeEnd = str_replace("'", "''", trim($end));
+        $safeEntityCode = str_replace("'", "''", trim($entityCode));
+
+        $sql = <<<SQL
+select distinct f.codprefijo||f.numero as nfactura_tns
+from factser f
+inner join usuaxcon us on us.usuaxconid = f.usuaxconid
+inner join contrato c on c.contaid = us.contaid
+inner join entidad e on e.entid = c.entid
+where f.fecha between '$safeStart' and '$safeEnd'
+  and f.codcomp = 'FV'
+  and e.codigo = '$safeEntityCode'
+  and f.fecasent is not null
+  and f.fecanulada is null
+order by 1
+SQL;
+
+        $rows = $connection->query($sql);
+        $facturas = [];
+        foreach ($rows as $row) {
+            $factura = trim((string) ($row['NFACTURA_TNS'] ?? $row['nfactura_tns'] ?? ''));
+            if ($factura === '') {
+                continue;
+            }
+            $facturas[] = $factura;
+        }
+
+        return $this->normalizeFacturas($facturas);
+    }
+
+    /**
+     * @param array<int, string> $facturas
+     * @return array<int, string>
+     */
+    private function normalizeFacturas(array $facturas): array
+    {
+        $normalized = [];
+        foreach ($facturas as $factura) {
+            $value = strtoupper(trim((string) $factura));
+            if ($value === '') {
+                continue;
+            }
+            $normalized[$value] = true;
+        }
+
+        return array_keys($normalized);
     }
 
     private function buildSuffix(): string
