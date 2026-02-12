@@ -3,6 +3,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const entitySelect = document.getElementById('entity');
     const progressBar = document.getElementById('progressBar');
     const progressLabel = document.getElementById('progressLabel');
+    const busyOverlay = document.getElementById('busyOverlay');
+    const busyMessage = document.getElementById('busyMessage');
+    const busyProgressBar = document.getElementById('busyProgressBar');
+    const busyProgressLabel = document.getElementById('busyProgressLabel');
     const result = document.getElementById('result');
     const submitButton = document.getElementById('submitButton');
     const mainNode = document.querySelector('main[data-tempo-dir]');
@@ -18,8 +22,25 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const setProgress = (value, message) => {
-        progressBar.style.width = `${Math.min(Math.max(value, 0), 100)}%`;
+        const normalized = Math.min(Math.max(value, 0), 100);
+        progressBar.style.width = `${normalized}%`;
         progressLabel.textContent = message;
+        if (busyProgressBar) {
+            busyProgressBar.style.width = `${normalized}%`;
+        }
+        if (busyProgressLabel) {
+            busyProgressLabel.textContent = message;
+        }
+    };
+
+    const setBusyState = (busy, message = 'Estamos generando los archivos.') => {
+        form.classList.toggle('is-busy', busy);
+        if (busyOverlay) {
+            busyOverlay.setAttribute('aria-hidden', busy ? 'false' : 'true');
+        }
+        if (busyMessage) {
+            busyMessage.textContent = message;
+        }
     };
 
     const animateProgress = (target = 90) => {
@@ -35,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const startProgress = (message) => {
+        setBusyState(true);
         setProgress(10, message);
         animateProgress();
     };
@@ -44,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setProgress(100, message);
         setTimeout(() => {
             setProgress(0, success ? 'Listo' : 'Listo con errores');
+            setBusyState(false);
         }, 900);
     };
 
@@ -151,6 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
         event.preventDefault();
         result.textContent = '';
         disableForm(true);
+        setBusyState(true);
         startProgress('Preparando plan y generando Furips...');
 
         const payload = {
@@ -196,6 +220,7 @@ document.addEventListener('DOMContentLoaded', () => {
         restoreDates();
         restoreEntity();
         result.textContent = '';
+        setBusyState(false);
         if (window.jQuery?.fn?.select2) {
             window.jQuery('#entity').val(null).trigger('change');
         }

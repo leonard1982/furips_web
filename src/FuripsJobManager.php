@@ -744,12 +744,35 @@ SQL;
 
     private function removeAccents(string $value): string
     {
+        if ($value === '') {
+            return '';
+        }
+
+        // Si llega texto en latin1/ansi, lo normaliza a UTF-8 antes de limpiar.
+        if (!mb_check_encoding($value, 'UTF-8')) {
+            $value = utf8_encode($value);
+        }
+
         $map = [
+            "\u{00C1}" => 'A', "\u{00C9}" => 'E', "\u{00CD}" => 'I', "\u{00D3}" => 'O', "\u{00DA}" => 'U',
+            "\u{00E1}" => 'A', "\u{00E9}" => 'E', "\u{00ED}" => 'I', "\u{00F3}" => 'O', "\u{00FA}" => 'U',
+            "\u{00D1}" => 'N', "\u{00F1}" => 'N', "\u{00DC}" => 'U', "\u{00FC}" => 'U',
+            // Patrones mojibake frecuentes en datos legacy.
             'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
             'á' => 'A', 'é' => 'E', 'í' => 'I', 'ó' => 'O', 'ú' => 'U',
-            'Ñ' => 'N', 'ñ' => 'N',
+            'Ñ' => 'N', 'ñ' => 'N', 'Ü' => 'U', 'ü' => 'U',
+            '�' => 'N', 'Ͽ�' => 'N', "\u{FFFD}" => 'N',
         ];
-        return strtr($value, $map);
+
+        $value = strtr($value, $map);
+
+        // Fallback para transliterar cualquier acento residual a ASCII.
+        $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+        if ($ascii !== false && $ascii !== '') {
+            $value = $ascii;
+        }
+
+        return $value;
     }
 
     /**

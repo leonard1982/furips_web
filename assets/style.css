@@ -91,6 +91,26 @@ header .tagline {
 .form {
     display: grid;
     gap: 1rem;
+    position: relative;
+}
+
+.site-footer {
+    margin-top: 1.15rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+.site-footer a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.site-footer a:hover {
+    text-decoration: underline;
 }
 
 .field label {
@@ -237,6 +257,82 @@ button:hover:not(:disabled) {
     border-radius: 99px;
     background: linear-gradient(90deg, var(--accent), #45a4ff);
     transition: width 0.3s ease;
+}
+
+.busy-overlay {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(246, 249, 252, 0.72);
+    backdrop-filter: blur(2px);
+    z-index: 20;
+}
+
+.form.is-busy .busy-overlay {
+    display: flex;
+}
+
+.busy-overlay__card {
+    width: min(520px, 100%);
+    background: #ffffff;
+    border: 1px solid var(--border-strong);
+    border-radius: 16px;
+    box-shadow: 0 14px 36px rgba(18, 31, 52, 0.15);
+    padding: 1rem 1.1rem 0.95rem;
+    text-align: center;
+}
+
+.busy-overlay__spinner {
+    width: 30px;
+    height: 30px;
+    margin: 0 auto 0.65rem;
+    border-radius: 50%;
+    border: 3px solid #d8e4f7;
+    border-top-color: var(--accent);
+    animation: busy-spin 0.9s linear infinite;
+}
+
+.busy-overlay__title {
+    margin: 0;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.busy-overlay__message {
+    margin: 0.25rem 0 0.7rem;
+    color: var(--muted);
+    font-size: 0.95rem;
+}
+
+.busy-overlay__progress {
+    width: 100%;
+    height: 8px;
+    border-radius: 99px;
+    overflow: hidden;
+    background: #e8edf3;
+}
+
+.busy-overlay__progress-bar {
+    width: 0;
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent), #45a4ff);
+    transition: width 0.3s ease;
+}
+
+.busy-overlay__label {
+    margin: 0.55rem 0 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+@keyframes busy-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .result {
