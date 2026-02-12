@@ -1,0 +1,582 @@
+<?php
+
+declare(strict_types=1);
+
+require_once __DIR__ . '/FirebirdConnection.php';
+require_once __DIR__ . '/SqlLogger.php';
+require_once __DIR__ . '/MysqlConnection.php';
+
+final class FuripsJobManager
+{
+    private $config;
+    private $tempoDir;
+    private $planFile;
+    private $jobDir;
+    private $logDir;
+    private $exportDir;
+    private $sqlDir;
+    private $mysqlConnection;
+    /** @var SqlLogger|null */
+    private $sqlLogger;
+
+    public function __construct(array $config)
+    {
+        $this->config = $config;
+        $this->tempoDir = $config['tempo']['dir'];
+        $this->planFile = $config['tempo']['plan_file'];
+        $this->jobDir = $config['storage']['jobs'];
+        $this->logDir = $config['storage']['logs'];
+        $this->exportDir = $config['storage']['exports'];
+        $this->sqlDir = $config['storage']['sql'];
+        $this->mysqlConnection = new MysqlConnection($config['mysql']);
+
+        $this->ensureDirectory($this->tempoDir);
+        $this->ensureDirectory(dirname($this->planFile));
+        $this->ensureDirectory($this->jobDir);
+        $this->ensureDirectory($this->logDir);
+        $this->ensureDirectory($this->sqlDir);
+        $this->ensureDirectory($this->exportDir);
+        $this->purgeOldTempoFiles(30);
+    }
+
+    public function run(string $startDate, string $endDate, string $entityCode): array
+    {
+        $start = $this->normalizeDate($startDate);
+        $end = $this->normalizeDate($endDate);
+
+        if ($start > $end) {
+            throw new InvalidArgumentException('La fecha inicial no puede ser mayor que la fecha final.');
+        }
+
+        $entityCode = trim($entityCode);
+        if ($entityCode === '') {
+            throw new InvalidArgumentException('Debe seleccionar una entidad.');
+        }
+
+        $jobId = bin2hex(random_bytes(8));
+        $suffix = $this->buildSuffix();
+        $planContent = $start . '|' . $end . '|' . $entityCode . '|' . $suffix . PHP_EOL;
+
+        $this->sqlLogger = new SqlLogger($this->sqlDir, $jobId);
+        $this->mysqlConnection->setLogger($this->sqlLogger);
+
+        file_put_contents($this->planFile, $planContent);
+
+        $this->saveJobState($jobId, [
+            'job_id' => $jobId,
+            'start_date' => $start,
+            'end_date' => $end,
+            'entity_code' => $entityCode,
+            'suffix' => $suffix,
+            'plan' => [
+                'path' => $this->planFile,
+                'content' => trim($planContent),
+            ],
+            'status' => 'plan-ready',
+            'progress' => 20,
+            'message' => 'Plan listo para generar FURIPS.',
+            'created_at' => (new DateTimeImmutable())->format(DATE_ATOM),
+        ]);
+
+        $logFile = $this->logDir . DIRECTORY_SEPARATOR . $jobId . '.log';
+        $logHandle = fopen($logFile, 'w');
+        if ($logHandle === false) {
+            throw new RuntimeException('No se pudo crear el archivo de log.');
+        }
+
+        fwrite($logHandle, "Plan generado: " . trim($planContent) . PHP_EOL);
+
+        $this->saveJobState($jobId, [
+            'status' => 'running',
+            'progress' => 40,
+            'message' => 'Consultando Firebird y generando archivos.',
+            'log' => $logFile,
+        ]);
+
+        try {
+            $files = $this->generateFurips($start, $end, $entityCode, $suffix, $logHandle);
+            fwrite($logHandle, "Proceso completo." . PHP_EOL);
+        } catch (\Throwable $exception) {
+            fwrite($logHandle, 'Proceso abortado: ' . $exception->getMessage() . PHP_EOL);
+            fclose($logHandle);
+            throw $exception;
+        } finally {
+            $this->mysqlConnection->setLogger(null);
+            $this->sqlLogger = null;
+        }
+
+        fclose($logHandle);
+
+        $this->saveJobState($jobId, [
+            'progress' => 70,
+            'message' => 'Archivos generados.',
+        ]);
+
+        $outputs = $this->collectOutputs($suffix, $jobId);
+
+        $this->saveJobState($jobId, [
+            'status' => 'completed',
+            'progress' => 100,
+            'message' => 'Furips generados.',
+            'outputs' => $outputs,
+            'finished_at' => (new DateTimeImmutable())->format(DATE_ATOM),
+        ]);
+
+        return [
+            'job_id' => $jobId,
+            'plan' => trim($planContent),
+            'outputs' => $outputs,
+            'log' => $logFile,
+        ];
+    }
+
+    private function generateFurips(string $start, string $end, string $entityCode, string $suffix, $logHandle): array
+    {
+        $connection = new FirebirdConnection($this->config['firebird']);
+        if ($this->sqlLogger !== null) {
+            $connection->setLogger($this->sqlLogger);
+        }
+        try {
+            $rows = $this->mysqlConnection->query($this->buildFuripsQuery($start, $end, $entityCode));
+        } catch (RuntimeException $exception) {
+            throw new RuntimeException(
+                'No se pudo leer la tabla FURIPS (MySQL). Verifique que la base gestion_documental esté replicada y ' .
+                'que las tablas necesarias existan. Detalle: ' . $exception->getMessage()
+            );
+        }
+
+        $total = count($rows);
+        $this->updateVarios($connection, 'CANTIDADFURIPS', $total);
+        if ($total === 0) {
+            fwrite($logHandle, "Sin resultados para el rango/entidad solicitados.\n");
+            throw new RuntimeException('No se encontraron FURIPS para el rango y entidad seleccionados.');
+        }
+
+        $file1 = $this->tempoDir . DIRECTORY_SEPARATOR . 'FURIPS1' . $suffix . '.txt';
+        $file2 = $this->tempoDir . DIRECTORY_SEPARATOR . 'FURIPS2' . $suffix . '.txt';
+        $handle1 = fopen($file1, 'w');
+        $handle2 = fopen($file2, 'w');
+
+        foreach ($rows as $offset => $row) {
+            // Normaliza las llaves del resultado MySQL a mayúsculas para
+            // mantener compatibilidad con la lógica heredada del JAR.
+            $row = array_change_key_case($row, CASE_UPPER);
+            $row['_CLINICAL'] = $this->fetchClinicalData(
+                $row['NFACTURA_TNS'] ?? '',
+                $row['CEDULA'] ?? ''
+            );
+
+            $count = $offset + 1;
+            $this->updateVarios($connection, 'CANTIDADSUBIDA', $count);
+            fwrite($logHandle, sprintf("Procesando registro %d/%d", $count, $total) . PHP_EOL);
+
+            $line1 = $this->buildLineOne($row, $connection);
+            $line2 = $this->buildLineTwo($row);
+
+            fwrite($handle1, $line1 . "\r\n");
+            fwrite($handle2, $line2 . "\r\n");
+        }
+
+        fclose($handle1);
+        fclose($handle2);
+
+        return [$file1, $file2];
+    }
+
+    private function buildLineOne(array $row, FirebirdConnection $connection): string
+    {
+        $clinical = $row['_CLINICAL'] ?? [];
+        $fromGlosas = $this->retrieveGlosas($connection, $row['NFACTURA_TNS'] ?? '');
+        $estado = $this->normalizeEstado($row['ESTADO_ASEGURAMIENTO'] ?? '');
+        $tipoServicio = $estado === '3' ? '' : ($row['TIPO_SERVICIO'] ?? '');
+        $marca = $estado === '3' ? '' : ($row['MARCA'] ?? '');
+        $tipodocProp = substr($row['TIPODOC_PROPIETARIO'] ?? '', 0, 2);
+        $tipodocCond = substr($row['TIPODOC_CONDUCTOR'] ?? '', 0, 2);
+        $soat = in_array($estado, ['1', '4', '6'], true) ? $this->formatSoat($row) : ['', ''];
+        $numPoliza = in_array($estado, ['1', '4', '6'], true) ? ($row['NUMERO_POLIZA'] ?? '') : '';
+
+        // Enriquecer con datos clínicos desde Firebird (actual y anterior)
+        $clinical = $this->fetchClinicalData($row['NFACTURA_TNS'] ?? '', $row['CEDULA'] ?? '');
+
+        // Paciente (victima)
+        $ap1Vic = $clinical['APELL1'] ?? ($row['APELLIDO1_PROPIETARIO'] ?? '');
+        $ap2Vic = $clinical['APELL2'] ?? ($row['APELLIDO2_PROPIETARIO'] ?? '');
+        $nom1Vic = $clinical['NOMBRE1'] ?? ($row['NOMBRE1_PROPIETARIO'] ?? '');
+        $nom2Vic = $clinical['NOMBRE2'] ?? ($row['NOMBRE2_PROPIETARIO'] ?? '');
+        $tipodocVic = $clinical['TIPODOC'] ?? $tipodocProp;
+        $docVic = $clinical['CEDULA'] ?? ($row['CEDULA'] ?? '');
+        $fechaNac = $clinical['FECHANAC'] ?? ($this->formatBirthDate($row['FECHANAC'] ?? '') ?? '');
+        $sexoVic = $clinical['SEXO'] ?? ($row['SEXO'] ?? '');
+        $telVic = $clinical['TELEFONO'] ?? ($row['TELEFONO_PROPIETARIO'] ?? '');
+        $dirVic = $clinical['DIRECCION'] ?? ($row['DIRECCION_PROPIETARIO'] ?? '');
+
+        $direccionProp = str_replace(',', '', $row['DIRECCION_PROPIETARIO'] ?? '');
+        $direccionCond = str_replace(',', '', $row['DIRECCION_CONDUCTOR'] ?? '');
+        $direccionOcurrencia = str_replace(',', '', $row['DIRECCION_OCURRENCIA'] ?? '');
+
+        $depProp = $clinical['DEP'] ?? ($row['DEPARTAMENTO_PROPIETARIO'] ?? ($row['COD_DEPTO'] ?? ''));
+        $munProp = $clinical['MUN'] ?? ($row['MUNICIPIO_PROPIETARIO'] ?? substr($row['COD_MUNICIPIO'] ?? '', 2, 3));
+
+        $depCond = $row['DEPARTAMENTO_CONDUCTOR'] ?? ($row['COD_DEPTO'] ?? '');
+        $munCond = $row['MUNICIPIO_CONDUCTOR'] ?? substr($row['COD_MUNICIPIO'] ?? '', 2, 3);
+
+        $depAccidente = $row['COD_DEPTO'] ?? '';
+        $munAccidente = substr($row['COD_MUNICIPIO'] ?? '', 2, 3);
+
+        $codDiag = $clinical['COD_DIAG'] ?? ($row['COD_DIAGNOSTICO'] ?? '');
+        $diagSec = $clinical['COD_DIAG'] ?? ($row['DIAGNOSTICO_SECUNDARIO'] ?? $codDiag);
+
+        $fechaAccidente = $this->formatDate($row['FECHA_ACCIDENTE'] ?? '');
+        $horaAccidente = substr($row['HORA_ACCIDENTE'] ?? '', 0, 5);
+        $fechaIngreso = $clinical['FECHA_ING'] ?? $this->formatDate($row['FECHASER'] ?? '');
+        $horaIngreso = $clinical['HORA_ING'] ?? substr($row['HORASER'] ?? '', 0, 5);
+        $fechaEgreso = $clinical['FECHA_EGR'] ?? $this->formatDate($row['FECHA_EGRESO'] ?? '');
+        if ($fechaEgreso === '') {
+            $fechaEgreso = $fechaIngreso;
+        }
+        $horaEgreso = $clinical['HORA_EGR'] ?? substr($row['HORA_EGRESO'] ?? '', 0, 5);
+        if ($horaEgreso === '') {
+            $horaEgreso = $this->calculateHour($horaIngreso);
+        }
+
+        $ap1Med = $this->extractWord($clinical['APELLIDOS_MEDICO'] ?? ($clinical['NOMBRE_MEDICO'] ?? ''), 0);
+        $ap2Med = $this->extractWord($clinical['APELLIDOS_MEDICO'] ?? ($clinical['NOMBRE_MEDICO'] ?? ''), 1);
+        $nom1Med = $this->extractWord($clinical['NOMBRES_MEDICO'] ?? ($clinical['NOMBRE_MEDICO'] ?? ''), 0);
+        $nom2Med = $this->extractWord($clinical['NOMBRES_MEDICO'] ?? ($clinical['NOMBRE_MEDICO'] ?? ''), 1);
+        $docMed = $clinical['DOC_MEDICO'] ?? ($row['DOC_MEDICO'] ?? $row['NUM_REGISTRO_MEDICO'] ?? '');
+        $regMed = $clinical['REG_MEDICO'] ?? ($row['NUM_REGISTRO_MEDICO'] ?? '');
+        $tipodocMed = $clinical['TIPODOC_MEDICO'] ?? 'CC';
+
+        $totalFacturado = $clinical['TOTAL'] ?? ($row['TOTAL_FACTURADO'] ?? $row['TOTAL'] ?? '0');
+        $totalRecobro = $row['TOTAL_RECOBRO'] ?? $totalFacturado;
+
+        // Sobrescribe con datos de la víctima/paciente cuando se tengan
+        $ap1Prop = $ap1Vic;
+        $ap2Prop = $ap2Vic;
+        $nom1Prop = $nom1Vic;
+        $nom2Prop = $nom2Vic;
+        $tipodocProp = $tipodocVic;
+        $docProp = $docVic;
+        $sexoProp = $sexoVic;
+        $telefonoProp = $telVic;
+        $direccionProp = str_replace(',', '', $dirVic);
+
+        $fields@@FIELDS@@
+
+        $fields = array_map([$this, 'sanitizeField'], $fields);
+        // Asegura 102 campos llenando vac?os al final si faltan posiciones
+        $fields = $this->padToLength($fields, 102);
+        return implode(',', $fields);
+    }
+
+    private function buildLineTwo(array $row): string
+    {
+        $clinical = $row['_CLINICAL'] ?? [];
+        [$codigoServicio, $descripcionServicio] = $this->splitService($row['TIPO_SERVICIO'] ?? '');
+        $cantidad = $clinical['TOTP'] ?? ($clinical['TOTTEP'] ?? 1);
+        if (!is_numeric($cantidad) || $cantidad <= 0) {
+            $cantidad = 1;
+        }
+        $valorUnitario = $clinical['VALOR_DET'] ?? null;
+        if ($valorUnitario === null || !is_numeric($valorUnitario)) {
+            $total = $row['TOTAL_FACTURADO'] ?? $row['TOTAL'] ?? '0';
+            $valorUnitario = $total;
+        }
+        $total = $clinical['TOTAL'] ?? ($row['TOTAL_FACTURADO'] ?? $row['TOTAL'] ?? '0');
+        $fields@@FIELDS@@
+
+        $fields = array_map([$this, 'sanitizeField'], $fields);
+        // Envío oficial exige 9 campos en FURIPS2
+        $fields = $this->padToLength($fields, 9);
+        return implode(',', $fields);
+    }
+
+    private function updateVarios(FirebirdConnection $connection, string $variable, int $value): void
+    {
+        $sql = sprintf("update varios set contenido='%d' where variab='%s'", $value, $variable);
+        $connection->execute($sql);
+    }
+
+    private function composeVictima(array $row): string
+    {
+        $parts = array_filter([
+            $row['APELLIDO1_PROPIETARIO'] ?? '',
+            $row['APELLIDO2_PROPIETARIO'] ?? '',
+            $row['NOMBRE1_PROPIETARIO'] ?? '',
+            $row['NOMBRE2_PROPIETARIO'] ?? '',
+        ], static function ($value) {
+            return $value !== '';
+        });
+
+        return implode(',', $parts);
+    }
+
+    private function normalizeCondicion(?string $value): string
+    {
+        if ($value === null) {
+            return '1';
+        }
+        $upper = strtoupper($value);
+        switch ($upper) {
+            case 'CONDUCTOR':
+                return '1';
+            case 'PEATON':
+                return '2';
+            case 'OCUPANTE':
+                return '3';
+            case 'CICLISTA':
+                return '4';
+            default:
+                return '1';
+        }
+    }
+
+    private function normalizeEstado(?string $value): string
+    {
+        if ($value === null) {
+            return '1';
+        }
+        $upper = strtoupper($value);
+        switch ($upper) {
+            case 'ASEGURADO':
+                return '1';
+            case 'NO ASEGURADO':
+                return '2';
+            case 'VEHICULO FANTASMA':
+            case 'VEHICULO EN FUGA':
+                return '3';
+            case 'POLIZA FALSA':
+                return '4';
+            case 'ASEGURADO D.2497':
+                return '6';
+            case 'NO ASEGURADO - PROPIETARIO INDETERMINADO':
+                return '7';
+            case 'NO ASEGURADO - SIN PLACA':
+                return '8';
+            default:
+                return '1';
+        }
+    }
+
+    private function formatDate(?string $value): string
+    {
+        if (empty($value)) return '';
+        $parts = explode('-', substr($value, 0, 10));
+        if (count($parts) === 3) {
+            return sprintf('%02d/%02d/%02d', $parts[2], $parts[1], $parts[0]);
+        }
+        return '';
+    }
+
+    private function formatBirthDate(?string $value): string
+    {
+        return $this->formatDate($value);
+    }
+
+    private function calculateHour(?string $hora): string
+    {
+        if (empty($hora)) {
+            return '00:00';
+        }
+        $parts = explode(':', substr($hora, 0, 5));
+        $hours = intval($parts[0] ?? 0);
+        $minutes = intval($parts[1] ?? 0);
+        if ($minutes > 29) {
+            $minutes -= 30;
+            $hours++;
+            if ($hours > 23) {
+                $hours = 0;
+            }
+        } else {
+            $minutes += 30;
+        }
+        return sprintf('%02d:%02d', $hours, $minutes);
+    }
+
+    private function splitService($value): array
+    {
+        $parts = explode('-', (string) $value, 2);
+        return [
+            trim($parts[0] ?? ''),
+            trim($parts[1] ?? ''),
+        ];
+    }
+
+    private function formatSoat(array $row): array
+    {
+        $inicio = $this->formatDate($row['VIGENCIA_POLIZA_DESDE'] ?? '');
+        $fin = $this->formatDate($row['VIGENCIA_POLIZA_HASTA'] ?? '');
+        return [$inicio, $fin];
+    }
+
+    private function formatDates(array $row): array
+    {
+        return $this->formatSoat($row);
+    }
+
+    private function retrieveGlosas(FirebirdConnection $connection, ?string $factura): array
+    {
+        if (empty($factura)) {
+            return ['numero' => '', 'respuesta' => ''];
+        }
+        $results = $connection->query("select numero from glosas where fv = 'FV{$factura}'");
+        if (!empty($results[0]['NUMERO'])) {
+            $parts = explode('|', $results[0]['NUMERO']);
+            return ['numero' => $parts[0] ?? '', 'respuesta' => $parts[1] ?? ''];
+        }
+        return ['numero' => '', 'respuesta' => ''];
+    }
+
+    private function truncate(string $value, int $length): string
+    {
+        if ($length <= 0) {
+            return $value;
+        }
+        return mb_strlen($value) > $length ? mb_substr($value, 0, $length) : $value;
+    }
+
+    private function extractFirstName(string $fullname): string
+    {
+        $parts = preg_split('/\s+/', trim($fullname));
+        return $parts[0] ?? '';
+    }
+
+    private function extractWord(string $text, int $index): string
+    {
+        if ($index < 0) {
+            return '';
+        }
+        $parts = array_values(array_filter(preg_split('/\s+/', trim($text)) ?: []));
+        return $parts[$index] ?? '';
+    }
+
+    private function sanitizeField($value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+        $text = (string) $value;
+        $text = str_replace([',', "\r", "\n"], ' ', $text);
+        $text = preg_replace('/\s+/', ' ', $text);
+        $text = trim($text);
+        $text = $this->removeAccents($text);
+        return strtoupper($text);
+    }
+
+    private function removeAccents(string $value): string
+    {
+        $map@@FIELDS@@
+        return strtr($value, $map);
+    }
+
+    /**
+     * Rellena con campos vacíos hasta alcanzar la longitud requerida.
+     */
+    private function padToLength(array $fields, int $length): array
+    {
+        if (count($fields) >= $length) {
+            return array_slice($fields, 0, $length);
+        }
+        return array_pad($fields, $length, '');
+    }
+
+    private function buildFuripsQuery(string $start, string $end, string $entityCode): string
+    {
+        return <<<SQL
+select f.id, f.cedula, f.condicion_accidentado, f.direccion_ocurrencia, f.fecha_accidente, f.hora_accidente, f.departamento, f.municipio, f.zona, f.estado_aseguramiento, mm.descripcion as marca, f.placa, f.tipo_servicio, a.codigo_tns as codigo_aseguradora, p.numero_poliza, f.vigencia_poliza_desde, f.vigencia_poliza_hasta, pf.codificacion_siras, f.cobro_excedente, f.cod_diagnostico, td.codigo as tipodoc_propietario, f.n_documento_propietario, f.apellido1_propietario, f.apellido2_propietario, f.nombre1_propietario, f.nombre2_propietario, f.nombre1_conductor, f.direccion_propietario, f.telefono_propietario, f.departamento_propietario, f.municipio_propietario, f.apellido1_conductor, f.apellido2_conductor, f.nombre1_conductor, f.nombre2_conductor, td2.codigo as tipodoc_conductor, f.victima_propietario, f.victima_conductor, f.n_documento_conductor, f.direccion_conductor, f.departamento_conductor, f.municipio_conductor, f.telefono_conductor, a2.placa as placa_amb, f.direccion_ocurrencia, f.desde, f.hasta, f.ambulancia_medicalizada, f.descripcion_accidente, m.codigo as cod_municipio, d.codigo as cod_depto, f.zona_traslados, pf.nfactura_tns, f.nombre1_propietario, pf.creado, a.descripcion, a.codigo_tns, f.hora_accidente, f.zona,
+       '' as fechanac, '' as sexo, pf.inicio as fechaser, '' as horaser, pf.fin as fecha_egreso, '' as hora_egreso, '' as diagnostico_secundario,
+       '' as nombres_medico, '' as apellidos_medico, '' as doc_medico, '' as num_registro_medico,
+       0 as total_facturado, 0 as total_recobro, 0 as total
+from furips f
+inner join polizas p on p.id = f.id_poliza
+inner join polizas_facturas pf on pf.id_furips = f.id
+inner join aseguradoras a on a.id = p.id_aseguradora
+inner join tipo_documentos td on td.id = f.tipo_documento_propietario
+inner join tipo_documentos td2 on td2.id = f.tipo_documento_conductor
+inner join ambulancias a2 on a2.id = f.idambulancia
+inner join marca_motos mm on mm.id = f.marca
+inner join departamentos d on d.id = f.departamento
+inner join municipios m on m.id = f.municipio
+where f.fecha_accidente >= '$start' and f.fecha_accidente <= '$end' and pf.facturado = 'SI' and a.codigo_tns = '$entityCode'
+order by f.fecha_accidente
+SQL;
+    }
+
+    private function buildSuffix(): string
+    {
+        $now = new DateTimeImmutable();
+        return '540010227201' . $now->format('d') . $now->format('m') . $now->format('Y');
+    }
+
+    private function normalizeDate(string $value): string
+    {
+        $date = DateTimeImmutable::createFromFormat('Y-m-d', $value);
+        if ($date === false) {
+            throw new InvalidArgumentException('Fechas deben venir en formato YYYY-MM-DD.');
+        }
+
+        return $date->format('Y-m-d');
+    }
+
+    private function ensureDirectory(string $path): void
+    {
+        if ($path === '' || is_dir($path)) {
+            return;
+        }
+
+        if (!mkdir($path, 0755, true) && !is_dir($path)) {
+            throw new RuntimeException("No se pudo crear el directorio $path");
+        }
+    }
+
+    /**
+     * Elimina archivos FURIPS* y globalsafe.txt de la carpeta de trabajo con más de $days días.
+     */
+    private function purgeOldTempoFiles(int $days): void
+    {
+        if ($days <= 0 || !is_dir($this->tempoDir)) {
+            return;
+        }
+        $files = glob($this->tempoDir . DIRECTORY_SEPARATOR . '{FURIPS*,globalsafe.txt}', GLOB_BRACE) ?: [];
+        $threshold = time() - ($days * 86400);
+        foreach ($files as $file) {
+            if (!is_file($file)) {
+                continue;
+            }
+            if (filemtime($file) < $threshold) {
+                @unlink($file);
+            }
+        }
+    }
+
+    private function collectOutputs(string $suffix, string $jobId): array
+    {
+        $pattern = $this->tempoDir . DIRECTORY_SEPARATOR . 'FURIPS*' . $suffix . '*.txt';
+        $files = glob($pattern) ?: [];
+        sort($files);
+
+        $exportBase = $this->exportDir . DIRECTORY_SEPARATOR . $jobId;
+        $this->ensureDirectory($exportBase);
+
+        $collected@@FIELDS@@
+        }
+
+        if ($collected === []) {
+            $collected[]@@FIELDS@@
+        }
+
+        return $collected;
+    }
+
+    private function saveJobState(string $jobId, array $payload): void
+    {
+        $jobFile = $this->jobDir . DIRECTORY_SEPARATOR . $jobId . '.json';
+        $current = [];
+        if (is_file($jobFile)) {
+            $current = json_decode(file_get_contents($jobFile), true) ?: [];
+        }
+        $state = array_merge($current, $payload);
+        file_put_contents($jobFile, json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+}
+

@@ -1,0 +1,434 @@
+/*
+ * Decompiled with https://jar.tools
+ * 
+ * Could not load the following classes:
+ *  furips.ConexionSQL
+ *  furips.ConexionTNS
+ */
+package furips;
+
+import furips.ConexionSQL;
+import furips.ConexionTNS;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+public class PrincipalFechaBien {
+    private static ConexionSQL Sql = null;
+    private static ConexionTNS Tns = null;
+    private static ConexionTNS TnsA = null;
+
+    public static void main(String[] args) throws ClassNotFoundException, SQLException, IOException {
+        File tempo = new File("c:\\tempo\\globalsafe.txt");
+        FileReader fr = new FileReader(tempo);
+        BufferedReader br = new BufferedReader(fr);
+        String data = br.readLine();
+        Object fechaIni = data.split("\\|")[0];
+        fechaIni = ((String)fechaIni).split("-")[1] + "/" + ((String)fechaIni).split("-")[2] + "/" + ((String)fechaIni).split("-")[0];
+        Object fechaFin = data.split("\\|")[1];
+        fechaFin = ((String)fechaFin).split("-")[1] + "/" + ((String)fechaFin).split("-")[2] + "/" + ((String)fechaFin).split("-")[0];
+        String aseguradora = data.split("\\|")[2];
+        String nombreArchivo = data.split("\\|")[3];
+        Integer cuenta = 0;
+        Boolean esConsulta = true;
+        String tipoConsulta = "";
+        Sql = new ConexionSQL("192.168.1.144", "gestion_documental", "root", ".facilweb2020", "3348");
+        Tns = new ConexionTNS("192.168.1.144", "C:\\DATOS TNS\\GLOBALSAFE2025.GDB", "SYSDBA", "masterkey", "3050");
+        TnsA = new ConexionTNS("192.168.1.144", "C:\\DATOS TNS\\GLOBALSAFE2025.GDB", "SYSDBA", "masterkey", "3050");
+        String ruta = "c:\\tempo\\FURIPS1" + nombreArchivo + ".txt";
+        File archivo = new File(ruta);
+        BufferedWriter bw = new BufferedWriter(new FileWriter(archivo));
+        File archivo2 = new File("c:\\tempo\\FURIPS2" + nombreArchivo + ".txt");
+        BufferedWriter bw2 = new BufferedWriter(new FileWriter(archivo2));
+        ResultSet rsTns = Tns.consultar("select count(distinct f.numero) as cuenta from factser f inner join defactser df on df.factserid=f.factserid inner join servicio s on s.servicioid=df.servicioid inner join usuaxcon us on us.usuaxconid=f.usuaxconid inner join contrato c on c.contaid=us.contaid inner join entidad e on e.entid=c.entid where e.codigo='" + aseguradora + "' and f.fecasent is not null and f.codcomp='FV' and f.estadodian='EXITOSA' and f.fecha>='" + (String)fechaIni + "' and f.fecha<='" + (String)fechaFin + "'");
+        cuenta = rsTns.next() ? Integer.valueOf(rsTns.getInt("cuenta")) : Integer.valueOf(0);
+        rsTns = Tns.consultar("select f.codprefijo||f.numero as numero_tns,u.fechanac,u.tipodoc,u.sexo,u.telefono,u.direccion,u.apell1,u.apell2,u.nombre1,u.nombre2 ,m.codigo as municipio ,f.hora as horaser,f.fechaing,  f.fechaegreso,p.nombre,p.apellidos,p.cedula,p.regprof,s.codigo||'-'||s.descripcion as servicioprestado , cast(f.total as int) as total,SUM(df.cantidad) AS tottep,(f.total/SUM(df.cantidad)) as valor_Det from factser f inner join usuaxcon us on us.usuaxconid=f.usuaxconid inner join contrato c on c.contaid=us.contaid inner join entidad e on e.entid=c.entid inner join defactser df on df.factserid=f.factserid inner join servicio s on s.servicioid=df.servicioid  inner join usuahosp u on u.usuahosid = us.usuahosid inner join municipio m on m.munid=u.munid inner join profesional p on p.profid=df.profrem inner join departamento de on de.depaid=m.depaid where e.codigo='" + aseguradora + "' and f.fecasent is not null and f.codcomp='FV' and f.estadodian='EXITOSA' and f.fecha>='" + (String)fechaIni + "' and f.fecha<='" + (String)fechaFin + "' GROUP BY f.codprefijo, f.numero,  u.fechanac, u.tipodoc, u.sexo, u.telefono, u.direccion,  u.apell1, u.apell2, u.nombre1, u.nombre2,  m.codigo,f.hora,  f.fechaing, f.fechaegreso,  p.nombre, p.apellidos, p.cedula, p.regprof,  s.codigo, s.descripcion,  f.total");
+        if (cuenta > 0) {
+            Tns.actualizar("update varios set contenido='" + String.valueOf(cuenta) + "' where variab='CANTIDADFURIPS'");
+            TnsA.actualizar("update varios set contenido='" + String.valueOf(cuenta) + "' where variab='CANTIDADFURIPS'");
+        }
+        while (rsTns.next()) {
+            System.out.println(rsTns.getRow() + " de " + String.valueOf(cuenta));
+            esConsulta = true;
+            tipoConsulta = "";
+            String placa_ambulancia = "";
+            String lugar_recogida = "";
+            String lugar_traslado = "";
+            String cantidadservicio = "";
+            String valor_detallado = "";
+            String radicado = "";
+            String respuesta = "";
+            String cedula = "";
+            String factura = "";
+            String consecutivo = "";
+            Object victima = "";
+            Object fecha_nacimiento = "";
+            String tipoidentificacion = "";
+            String sexo = "O";
+            String direccion = "";
+            String departamento = "";
+            String municipio = "";
+            String telefono = "";
+            String condicion = "";
+            String direccion_accidente = "";
+            Object fecha_accidente = "";
+            String hora_accidente = "";
+            String zona_evento = "";
+            String estado_aseguramiento = "";
+            String marca = "";
+            String placa = "";
+            String tipo_vehiculo = "";
+            String cod_aseguradora = "";
+            String num_soat = "";
+            Object fechaini_soat = "";
+            Object fechafin_soat = "";
+            String numrad_siras = "";
+            String excede_soat = "";
+            String cod_diag = "";
+            String tipodoc_propietario = "";
+            String numdoc_propietario = "";
+            String nombre1_propietario = "";
+            String nombre2_propietario = "";
+            String apellido1_propietario = "";
+            String apellido2_propietario = "";
+            String dir_propiertario = "";
+            String telf_propietario = "";
+            String depto_propietario = "";
+            String municipio_propietario = "";
+            dir_propiertario = "";
+            telf_propietario = "";
+            depto_propietario = "";
+            municipio_propietario = "";
+            String apellido1_conductor = "";
+            String apellido2_conductor = "";
+            String nombre1_conductor = "";
+            String nombre2_conductor = "";
+            String tipodoc_conductor = "";
+            String numdoc_conductor = "";
+            String dir_conductor = "";
+            String telf_conductor = "";
+            String tipo_referencia = "";
+            String fecha_remision = "";
+            String hora_salida = "";
+            String depto_conductor = "";
+            String muni_conductor = "";
+            String total_facturado = "";
+            Object fecha_ingreso = "";
+            String hora_ingreso = "";
+            String fecha_egreso = "";
+            String hora_egreso = "";
+            String diagppal_ingreso = "";
+            String diagasoc_ingreso1 = "";
+            String diagasoc_ingreso2 = "";
+            String diagppal_egreso = "";
+            String diagasoc_egreso1 = "";
+            String diagasco_egreso2 = "";
+            String priapellido_medico = "";
+            String segapellido_medico = "";
+            String prinombre_medico = "";
+            String segnombre_medico = "";
+            String tipodoc_medico = "";
+            String numdoc_medico = "";
+            String numregistro_medico = "";
+            String descr_evento = "";
+            String nfactura_tns = "";
+            tipoConsulta = rsTns.getString("servicioprestado");
+            cantidadservicio = rsTns.getString("valor_Det");
+            valor_detallado = rsTns.getString("tottep");
+            fecha_nacimiento = rsTns.getString("fechanac");
+            fecha_nacimiento = ((String)fecha_nacimiento).equals("") ? "01/01/2000" : ((String)fecha_nacimiento).substring(8, 10) + "/" + ((String)fecha_nacimiento).substring(5, 7) + "/" + ((String)fecha_nacimiento).substring(0, 4);
+            factura = rsTns.getString("numero_tns");
+            tipoidentificacion = rsTns.getString("tipodoc");
+            sexo = rsTns.getString("sexo");
+            direccion = rsTns.getString("direccion");
+            telefono = rsTns.getString("telefono");
+            victima = rsTns.getString("apell1") + "," + rsTns.getString("apell2") + "," + rsTns.getString("nombre1") + "," + rsTns.getString("nombre2");
+            System.out.println("NUM FACT: " + factura);
+            fecha_ingreso = rsTns.getString("fechaing");
+            fecha_ingreso = ((String)fecha_ingreso).substring(8, 10) + "/" + ((String)fecha_ingreso).substring(5, 7) + "/" + ((String)fecha_ingreso).substring(0, 4);
+            hora_ingreso = rsTns.getString("horaser");
+            fecha_egreso = rsTns.getString("fechaegreso");
+            hora_egreso = PrincipalFechaBien.calcularHora(rsTns.getString("horaser"));
+            ResultSet rsAuxTns = Tns.consultar("select d.codigo from diagnostico d inner join ripproc r on r.diagp=d.diagid inner join defactser df on df.autorizacion=r.codcomp||r.codprefijo||r.numfact inner join factser f on f.factserid=df.factserid where f.codprefijo||f.numero='" + factura + "'");
+            if (rsAuxTns.next()) {
+                cod_diag = rsAuxTns.getString("codigo");
+            } else {
+                rsAuxTns = Tns.consultar("select d.codigo from diagnostico d inner join ripconsul r on r.diagp=d.diagid inner join defactser df on df.autorizacion=r.codcomp||r.codprefijo||r.numfact inner join factser f on f.factserid=df.factserid where f.codprefijo||f.numero='" + factura + "'");
+                if (rsAuxTns.next()) {
+                    cod_diag = rsAuxTns.getString("codigo");
+                }
+            }
+            if (rsTns.getString("nombre").split(" ").length > 1) {
+                prinombre_medico = rsTns.getString("nombre").split(" ")[0];
+                segnombre_medico = rsTns.getString("nombre").split(" ")[1];
+            } else {
+                prinombre_medico = rsTns.getString("nombre");
+            }
+            if (rsTns.getString("apellidos").split(" ").length > 1) {
+                priapellido_medico = rsTns.getString("apellidos").split(" ")[0];
+                segapellido_medico = rsTns.getString("apellidos").split(" ")[1];
+            } else {
+                priapellido_medico = rsTns.getString("apellidos");
+            }
+            tipodoc_medico = "CC";
+            numdoc_medico = rsTns.getString("cedula");
+            numregistro_medico = rsTns.getString("regprof");
+            total_facturado = rsTns.getString("total");
+            ResultSet rs = Sql.consultar("select f.id,f.cedula, f.condicion_accidentado,f.direccion_ocurrencia,f.fecha_accidente,f.hora_accidente, f.departamento, f.municipio,f.zona,f.estado_aseguramiento, mm.descripcion as marca, f.placa,f.tipo_servicio, a.codigo_tns as codigo_aseguradora,p.numero_poliza,f.vigencia_poliza_desde, f.vigencia_poliza_hasta, pf.codificacion_siras,f.cobro_excedente,f.cod_diagnostico,td.codigo as tipodoc_propietario,f.n_documento_propietario,f.apellido1_propietario,f.apellido2_propietario,f.nombre1_propietario,f.nombre2_propietario,f.nombre1_conductor,f.direccion_propietario, f.telefono_propietario, f.departamento_propietario, f.municipio_propietario,f.apellido1_conductor, f.apellido2_conductor, f.nombre1_conductor, f.nombre2_conductor,td2.codigo as tipodoc_conductor,f.victima_propietario,f.victima_conductor, f.n_documento_conductor, f.direccion_conductor,f.departamento_conductor, f.municipio_conductor, f.telefono_conductor,a2.placa as placa_amb, f.direccion_ocurrencia,f.desde,f.hasta, f.ambulancia_medicalizada,f.descripcion_accidente,m.codigo as cod_municipio, d.codigo as cod_depto ,f.zona_traslados,pf.nfactura_tns, f.nombre1_propietario, pf.creado, a.descripcion, a.codigo_tns from furips f \r\ninner join polizas p on p.id =f.id_poliza \r\ninner join polizas_facturas pf on pf.id_furips =f.id \r\ninner join aseguradoras a on a.id =p.id_aseguradora \r\ninner join tipo_documentos td on td.id = f.tipo_documento_propietario\r\ninner join tipo_documentos td2 on td2.id = f.tipo_documento_conductor\r\nleft join ambulancias a2 on a2.id = f.idambulancia inner join marca_motos mm  on mm.id =f.marca  inner join departamentos d on d.id=f.departamento \r\ninner join municipios m on m.id=f.municipio where pf.nfactura_tns='" + rsTns.getString("numero_tns") + "'");
+            if (rs.next()) {
+                descr_evento = rs.getString("descripcion_accidente").replaceAll(",", "");
+                if ((descr_evento = descr_evento.replaceAll("\n", "")).length() > 199) {
+                    descr_evento = descr_evento.substring(0, 199);
+                }
+                departamento = rs.getString("cod_depto");
+                municipio = rs.getString("cod_municipio").substring(2, 5);
+                cedula = rs.getString("cedula");
+                consecutivo = rs.getString("nfactura_tns").substring(2, 8);
+                factura = rs.getString("nfactura_tns");
+                String string = condicion = rs.getString("condicion_accidentado");
+                int n = -1;
+                switch (string.hashCode()) {
+                    case 1935869447: {
+                        if (!string.equals("CONDUCTOR")) break;
+                        n = 0;
+                        break;
+                    }
+                    case -1938892601: {
+                        if (!string.equals("PEATON")) break;
+                        n = 1;
+                        break;
+                    }
+                    case 2085641037: {
+                        if (!string.equals("OCUPANTE")) break;
+                        n = 2;
+                        break;
+                    }
+                    case -1136934682: {
+                        if (!string.equals("CICLISTA")) break;
+                        n = 3;
+                    }
+                }
+                switch (n) {
+                    case 0: {
+                        condicion = "1";
+                        break;
+                    }
+                    case 1: {
+                        condicion = "2";
+                        break;
+                    }
+                    case 2: {
+                        condicion = "3";
+                        break;
+                    }
+                    case 3: {
+                        condicion = "4";
+                        break;
+                    }
+                    default: {
+                        condicion = "1";
+                    }
+                }
+                direccion_accidente = rs.getString("direccion_ocurrencia").length() >= 100 ? direccion_accidente.substring(0, 99) : rs.getString("direccion_ocurrencia");
+                fecha_accidente = rs.getString("fecha_accidente");
+                fecha_accidente = ((String)fecha_accidente).substring(8, 10) + "/" + ((String)fecha_accidente).substring(5, 7) + "/" + ((String)fecha_accidente).substring(0, 4);
+                hora_accidente = rs.getString("hora_accidente");
+                hora_accidente = hora_accidente.substring(0, 5);
+                zona_evento = rs.getString("zona");
+                string = rs.getString("estado_aseguramiento");
+                n = -1;
+                switch (string.hashCode()) {
+                    case 325835003: {
+                        if (!string.equals("ASEGURADO")) break;
+                        n = 0;
+                        break;
+                    }
+                    case -414348964: {
+                        if (!string.equals("NO ASEGURADO")) break;
+                        n = 1;
+                        break;
+                    }
+                    case 211356898: {
+                        if (!string.equals("VEHICULO FANTASMA")) break;
+                        n = 2;
+                        break;
+                    }
+                    case 141349701: {
+                        if (!string.equals("VEHICULO EN FUGA")) break;
+                        n = 3;
+                        break;
+                    }
+                    case 1436228226: {
+                        if (!string.equals("POLIZA FALSA")) break;
+                        n = 4;
+                        break;
+                    }
+                    case 961074959: {
+                        if (!string.equals("ASEGURADO D.2497")) break;
+                        n = 5;
+                        break;
+                    }
+                    case -2061336150: {
+                        if (!string.equals("NO ASEGURADO - PROPIETARIO INDETERMINADO")) break;
+                        n = 6;
+                        break;
+                    }
+                    case -408525180: {
+                        if (!string.equals("NO ASEGURADO - SIN PLACA")) break;
+                        n = 7;
+                    }
+                }
+                switch (n) {
+                    case 0: {
+                        estado_aseguramiento = "1";
+                        break;
+                    }
+                    case 1: {
+                        estado_aseguramiento = "2";
+                        break;
+                    }
+                    case 2: 
+                    case 3: {
+                        estado_aseguramiento = "3";
+                        break;
+                    }
+                    case 4: {
+                        estado_aseguramiento = "4";
+                        break;
+                    }
+                    case 5: {
+                        estado_aseguramiento = "6";
+                        break;
+                    }
+                    case 6: {
+                        estado_aseguramiento = "7";
+                        break;
+                    }
+                    case 7: {
+                        estado_aseguramiento = "8";
+                        break;
+                    }
+                    default: {
+                        estado_aseguramiento = "1";
+                    }
+                }
+                marca = estado_aseguramiento == "3" ? "" : rs.getString("marca");
+                placa = rs.getString("placa");
+                String string2 = tipo_vehiculo = estado_aseguramiento == "3" ? "" : rs.getString("tipo_servicio");
+                if (estado_aseguramiento == "1" || estado_aseguramiento == "4" || estado_aseguramiento == "6") {
+                    cod_aseguradora = rs.getString("codigo_aseguradora");
+                    num_soat = rs.getString("numero_poliza");
+                    fechaini_soat = rs.getString("vigencia_poliza_desde");
+                    fechaini_soat = ((String)fechaini_soat).substring(8, 10) + "/" + ((String)fechaini_soat).substring(5, 7) + "/" + ((String)fechaini_soat).substring(0, 4);
+                    fechafin_soat = rs.getString("vigencia_poliza_hasta");
+                    fechafin_soat = ((String)fechafin_soat).substring(8, 10) + "/" + ((String)fechafin_soat).substring(5, 7) + "/" + ((String)fechafin_soat).substring(0, 4);
+                } else {
+                    cod_aseguradora = "";
+                    num_soat = "";
+                    fechaini_soat = "";
+                    fechafin_soat = "";
+                }
+                numrad_siras = rs.getString("codificacion_siras");
+                excede_soat = rs.getString("cobro_excedente") == "SI" ? "1" : "0";
+                cod_diag = rs.getString("cod_diagnostico");
+                tipodoc_propietario = rs.getString("tipodoc_propietario").substring(0, 2);
+                if (tipodoc_propietario.equals("PPT")) {
+                    tipodoc_propietario = "PT";
+                }
+                numdoc_propietario = rs.getString("n_documento_propietario");
+                nombre1_propietario = rs.getString("nombre1_propietario");
+                nombre2_propietario = rs.getString("nombre2_propietario");
+                apellido1_propietario = rs.getString("apellido1_propietario");
+                apellido2_propietario = rs.getString("apellido2_propietario");
+                dir_propiertario = rs.getString("direccion_propietario");
+                telf_propietario = rs.getString("telefono_propietario");
+                depto_propietario = rs.getString("cod_depto");
+                municipio_propietario = rs.getString("cod_municipio").substring(2, 5);
+                if (rs.getString("victima_conductor").equals("SI")) {
+                    apellido1_conductor = ((String)victima).split(",")[0];
+                    apellido2_conductor = ((String)victima).split(",")[1];
+                    nombre1_conductor = ((String)victima).split(",")[2];
+                    nombre2_conductor = ((String)victima).split(",").length > 3 ? ((String)victima).split(",")[3] : "";
+                    tipodoc_conductor = tipoidentificacion;
+                    if (tipodoc_conductor.equals("PPT")) {
+                        tipodoc_conductor = "PT";
+                    }
+                    numdoc_conductor = cedula;
+                    dir_conductor = direccion;
+                    depto_conductor = departamento;
+                    muni_conductor = municipio;
+                    telf_conductor = telefono;
+                } else {
+                    apellido1_conductor = rs.getString("apellido1_conductor");
+                    apellido2_conductor = rs.getString("apellido2_conductor");
+                    nombre1_conductor = rs.getString("nombre1_conductor");
+                    nombre2_conductor = rs.getString("nombre2_conductor");
+                    tipodoc_conductor = rs.getString("tipodoc_conductor");
+                    if (tipodoc_conductor.equals("PPT")) {
+                        tipodoc_conductor = "PT";
+                    }
+                    numdoc_conductor = rs.getString("n_documento_conductor");
+                    dir_conductor = rs.getString("direccion_conductor");
+                    depto_conductor = rs.getString("cod_depto");
+                    muni_conductor = rs.getString("cod_municipio").substring(2, 5);
+                    telf_conductor = rs.getString("telefono_conductor");
+                }
+                if (rs.getString("victima_propietario").equals("SI")) {
+                    apellido1_propietario = ((String)victima).split(",")[0];
+                    apellido2_propietario = ((String)victima).split(",")[1];
+                    nombre1_propietario = ((String)victima).split(",")[2];
+                    nombre2_propietario = ((String)victima).split(",").length > 3 ? ((String)victima).split(",")[3] : "";
+                    tipodoc_propietario = tipoidentificacion;
+                    if (tipodoc_propietario.equals("PPT")) {
+                        tipodoc_propietario = "PT";
+                    }
+                    numdoc_propietario = cedula;
+                    dir_propiertario = direccion;
+                    depto_propietario = departamento;
+                    municipio_propietario = municipio;
+                    telf_propietario = telefono;
+                }
+                placa_ambulancia = rs.getString("placa_amb");
+                lugar_recogida = rs.getString("desde").length() > 40 ? rs.getString("desde").substring(0, 40) : rs.getString("desde");
+                lugar_traslado = rs.getString("hasta").length() > 40 ? rs.getString("hasta").substring(0, 40) : rs.getString("hasta");
+                nfactura_tns = rs.getString("nfactura_tns");
+                consecutivo = rs.getString("nfactura_tns").substring(2, 8);
+                bw.write(radicado + "," + respuesta + "," + factura + "," + consecutivo + ",540010227201," + (String)victima + "," + tipoidentificacion + "," + cedula + "," + (String)fecha_nacimiento + ",," + sexo + "," + direccion.replaceAll(",", "") + "," + departamento + "," + municipio + "," + telefono + "," + condicion + ",01,," + direccion_accidente + "," + (String)fecha_accidente + "," + hora_accidente + "," + departamento + "," + municipio + "," + zona_evento + "," + estado_aseguramiento + "," + marca + "," + placa + "," + tipo_vehiculo + "," + cod_aseguradora + "," + num_soat + "," + (String)fechaini_soat + "," + (String)fechafin_soat + "," + numrad_siras + "," + excede_soat + "," + cod_diag + ",,,,,," + tipodoc_propietario + "," + numdoc_propietario + "," + apellido1_propietario + "," + apellido2_propietario + "," + nombre1_propietario + "," + nombre2_propietario + "," + dir_propiertario.replaceAll(",", "") + "," + telf_propietario + "," + depto_propietario + "," + municipio_propietario + "," + apellido1_conductor + "," + apellido2_conductor + "," + nombre1_conductor + "," + nombre2_conductor + "," + tipodoc_conductor + "," + numdoc_conductor + "," + dir_conductor.replaceAll(",", "") + "," + depto_conductor + "," + muni_conductor + "," + telf_conductor + ",,,,,,,,,,,," + placa_ambulancia + "," + lugar_recogida + "," + lugar_traslado + ",1,U," + (String)fecha_ingreso + "," + hora_ingreso + "," + fecha_egreso + "," + hora_egreso + "," + cod_diag + ",,," + cod_diag + ",,," + priapellido_medico + "," + segapellido_medico + "," + prinombre_medico + "," + segnombre_medico + "," + tipodoc_medico + "," + numdoc_medico + "," + numregistro_medico + "," + total_facturado + "," + total_facturado + ",0," + total_facturado + ",1," + descr_evento + "\r\n");
+                bw2.write(factura + "," + consecutivo + ",2," + tipoConsulta.split("-")[0] + "," + tipoConsulta.split("-")[1] + "," + cantidadservicio.replaceAll(".", "") + "," + valor_detallado + "," + total_facturado + "," + total_facturado + "\r\n");
+            }
+            Tns.actualizar("update varios set contenido='" + String.valueOf(rsTns.getRow()) + "' where variab='CANTIDADSUBIDA'");
+            TnsA.actualizar("update varios set contenido='" + String.valueOf(rsTns.getRow()) + "' where variab='CANTIDADSUBIDA'");
+        }
+        bw.close();
+        bw2.close();
+        br.close();
+    }
+
+    public static String calcularHora(String hora) {
+        Object hora_egreso = "00:00";
+        Integer horas = 0;
+        Integer minuto = 0;
+        if (!hora.equals("")) {
+            horas = Integer.parseInt(hora.split(":")[0]);
+            minuto = Integer.parseInt(hora.split(":")[1]);
+            if (minuto > 29) {
+                Integer n = horas;
+                horas = horas + 1;
+                if (horas > 23) {
+                    horas = 0;
+                }
+                minuto = minuto - 30;
+            } else {
+                minuto = minuto + 30;
+            }
+        }
+        hora_egreso = horas < 10 ? "0" + String.valueOf(horas) + ":" : String.valueOf(horas) + ":";
+        hora_egreso = minuto < 10 ? (String)hora_egreso + "0" + String.valueOf(minuto) : (String)hora_egreso + String.valueOf(minuto);
+        return hora_egreso;
+    }
+}
