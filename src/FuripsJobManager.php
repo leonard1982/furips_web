@@ -812,7 +812,7 @@ inner join ambulancias a2 on a2.id = f.idambulancia
 inner join marca_motos mm on mm.id = f.marca
 inner join departamentos d on d.id = f.departamento
 inner join municipios m on m.id = f.municipio
-where pf.facturado = 'SI' and pf.nfactura_tns in ($invoicesSql)
+where pf.nfactura_tns in ($invoicesSql)
 order by pf.nfactura_tns
 SQL;
     }

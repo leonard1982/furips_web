@@ -47,6 +47,16 @@ Este archivo registra los cambios funcionales y tecnicos realizados en este proy
   - `main` queda actualizado y publicado en GitHub (`origin/main`).
   - La rama `feature/filtro-firebird-factser-2026-02-12` se conserva como referencia historica.
 
+### Ajuste de cruce Firebird/MySQL (2026-02-15)
+
+- Se detecto diferencia entre facturas filtradas en Firebird y registros finales en MySQL.
+- Causa: en `buildFuripsQuery` se mantenia el filtro `pf.facturado = 'SI'`, lo que recortaba la lista de facturas devuelta por Firebird.
+- Correccion aplicada:
+  - Se elimina el filtro `pf.facturado = 'SI'`.
+  - El cruce en MySQL queda solo por `pf.nfactura_tns IN (facturas_firebird)`.
+- Resultado esperado:
+  - Si Firebird devuelve N facturas y existen en `polizas_facturas` por `nfactura_tns`, el generador debe procesar ese mismo total sin recorte por estado de facturacion.
+
 ## Convencion sugerida para siguientes cambios
 
 - Registrar fecha (`YYYY-MM-DD`), archivo(s) tocados y motivo del ajuste.
