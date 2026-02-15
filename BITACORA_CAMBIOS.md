@@ -56,6 +56,10 @@ Este archivo registra los cambios funcionales y tecnicos realizados en este proy
   - El cruce en MySQL queda solo por `pf.nfactura_tns IN (facturas_firebird)`.
 - Resultado esperado:
   - Si Firebird devuelve N facturas y existen en `polizas_facturas` por `nfactura_tns`, el generador debe procesar ese mismo total sin recorte por estado de facturacion.
+- Ajuste adicional de conteo y generacion:
+  - `CANTIDADFURIPS` ahora se actualiza con el total de facturas encontradas en Firebird (no con el total de filas de MySQL).
+  - El proceso recorre la lista de facturas de Firebird y genera una linea por cada factura.
+  - Si una factura no trae relacion completa en MySQL, se genera igual el FURIPS con campos MySQL en blanco.
 
 ## Convencion sugerida para siguientes cambios
 

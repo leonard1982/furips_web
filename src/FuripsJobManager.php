@@ -166,38 +166,59 @@ final class FuripsJobManager
             );
         }
 
-        $total = count($rows);
-        $this->updateVarios($connection, 'CANTIDADFURIPS', $total);
-        if ($total === 0) {
-            fwrite($logHandle, "Sin resultados en MySQL para las facturas filtradas en Firebird.\n");
-            throw new RuntimeException(
-                'No se encontraron FURIPS en MySQL para las facturas obtenidas en Firebird.'
-            );
+        $rowsByFactura = [];
+        foreach ($rows as $mysqlRow) {
+            $mysqlRow = array_change_key_case($mysqlRow, CASE_UPPER);
+            $factura = trim((string) ($mysqlRow['NFACTURA_TNS'] ?? ''));
+            if ($factura === '') {
+                continue;
+            }
+            if (!isset($rowsByFactura[$factura])) {
+                $rowsByFactura[$factura] = $mysqlRow;
+            }
         }
+
+        $total = count($facturas);
+        $encontradasMysql = count($rowsByFactura);
+        $faltantesMysql = $total - $encontradasMysql;
+
+        $this->updateVarios($connection, 'CANTIDADFURIPS', $total);
+        fwrite(
+            $logHandle,
+            sprintf(
+                "Facturas Firebird: %d; con datos MySQL: %d; faltantes MySQL (se generan en blanco): %d",
+                $total,
+                $encontradasMysql,
+                max(0, $faltantesMysql)
+            ) . PHP_EOL
+        );
 
         $file1 = $this->tempoDir . DIRECTORY_SEPARATOR . 'FURIPS1' . $suffix . '.txt';
         $file2 = $this->tempoDir . DIRECTORY_SEPARATOR . 'FURIPS2' . $suffix . '.txt';
         $handle1 = fopen($file1, 'w');
         $handle2 = fopen($file2, 'w');
 
-        foreach ($rows as $offset => $row) {
-            // Normaliza las llaves del resultado MySQL a mayusculas para
-            // mantener compatibilidad con la logica heredada del JAR.
-            $row = array_change_key_case($row, CASE_UPPER);
+        foreach ($facturas as $offset => $factura) {
+            $row = $rowsByFactura[$factura] ?? [];
+            $row['NFACTURA_TNS'] = $factura;
+            if (($row['CODIGO_ASEGURADORA'] ?? '') === '') {
+                $row['CODIGO_ASEGURADORA'] = $entityCode;
+            }
+
             $row['_CLINICAL'] = $this->fetchClinicalData(
-                $row['NFACTURA_TNS'] ?? '',
+                $factura,
                 $row['CEDULA'] ?? ''
             );
 
             $count = $offset + 1;
             $this->updateVarios($connection, 'CANTIDADSUBIDA', $count);
-            fwrite($logHandle, sprintf("Procesando registro %d/%d", $count, $total) . PHP_EOL);
+            fwrite($logHandle, sprintf("Procesando registro %d/%d (%s)", $count, $total, $factura) . PHP_EOL);
 
             $line1 = $this->buildLineOne($row, $connection);
             $line2 = $this->buildLineTwo($row);
 
-            $this->assertColumnCount($line1, 102, 'FURIPS1', $row['NFACTURA_TNS'] ?? '');
-            $this->assertColumnCount($line2, 9, 'FURIPS2', $row['NFACTURA_TNS'] ?? '');
+            $this->assertColumnCount($line1, 102, 'FURIPS1', $factura);
+            $this->assertColumnCount($line2, 9, 'FURIPS2', $factura);
 
             fwrite($handle1, $line1 . "\r\n");
             fwrite($handle2, $line2 . "\r\n");
