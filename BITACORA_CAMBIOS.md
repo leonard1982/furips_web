@@ -61,6 +61,19 @@ Este archivo registra los cambios funcionales y tecnicos realizados en este proy
   - El proceso recorre la lista de facturas de Firebird y genera una linea por cada factura.
   - Si una factura no trae relacion completa en MySQL, se genera igual el FURIPS con campos MySQL en blanco.
 
+### Ajuste de joins en consulta MySQL (2026-02-16)
+
+- En `buildFuripsQuery` de `src/FuripsJobManager.php` se cambiaron los `INNER JOIN` por `LEFT JOIN` en las tablas:
+  - `polizas`
+  - `polizas_facturas`
+  - `aseguradoras`
+  - `tipo_documentos` (`td` y `td2`)
+  - `ambulancias`
+  - `marca_motos`
+  - `departamentos`
+  - `municipios`
+- Motivo: evitar perdida de filas por relaciones incompletas en MySQL y mantener la estrategia de completar campos en blanco cuando falte informacion.
+
 ## Convencion sugerida para siguientes cambios
 
 - Registrar fecha (`YYYY-MM-DD`), archivo(s) tocados y motivo del ajuste.

@@ -824,15 +824,15 @@ select f.id, f.cedula, f.condicion_accidentado, f.direccion_ocurrencia, f.fecha_
        '' as nombres_medico, '' as apellidos_medico, '' as doc_medico, '' as num_registro_medico,
        0 as total_facturado, 0 as total_recobro, 0 as total
 from furips f
-inner join polizas p on p.id = f.id_poliza
-inner join polizas_facturas pf on pf.id_furips = f.id
-inner join aseguradoras a on a.id = p.id_aseguradora
-inner join tipo_documentos td on td.id = f.tipo_documento_propietario
-inner join tipo_documentos td2 on td2.id = f.tipo_documento_conductor
-inner join ambulancias a2 on a2.id = f.idambulancia
-inner join marca_motos mm on mm.id = f.marca
-inner join departamentos d on d.id = f.departamento
-inner join municipios m on m.id = f.municipio
+left join polizas p on p.id = f.id_poliza
+left join polizas_facturas pf on pf.id_furips = f.id
+left join aseguradoras a on a.id = p.id_aseguradora
+left join tipo_documentos td on td.id = f.tipo_documento_propietario
+left join tipo_documentos td2 on td2.id = f.tipo_documento_conductor
+left join ambulancias a2 on a2.id = f.idambulancia
+left join marca_motos mm on mm.id = f.marca
+left join departamentos d on d.id = f.departamento
+left join municipios m on m.id = f.municipio
 where pf.nfactura_tns in ($invoicesSql)
 order by pf.nfactura_tns
 SQL;
