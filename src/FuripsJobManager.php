@@ -376,7 +376,7 @@ final class FuripsJobManager
             $this->truncate($row['DESDE'] ?? '', 40),       // 76 desde
             $this->truncate($row['HASTA'] ?? '', 40),       // 77 hasta
             '1',                                            // 78 ambulancia_med
-            $row['ZONA_TRASLADOS'] ?? 'U',                  // 79 zona_traslados
+            $this->normalizeZonaTraslados($row['ZONA_TRASLADOS'] ?? ''), // 79 zona_traslados
             $fechaIngreso,                                  // 80 fecha_ingreso
             $horaIngreso,                                   // 81 hora_ingreso
             $fechaEgreso,                                   // 82 fecha_egreso
@@ -658,7 +658,24 @@ SQL;
         }
     }
 
-    private function formatDate(?string $value): string
+    private function normalizeZonaTraslados(?string $value): string
+    {
+        $upper = strtoupper(trim((string) ($value ?? '')));
+        if ($upper === '') {
+            return 'U';
+        }
+
+        if ($upper === 'U' || strpos($upper, 'URB') === 0) {
+            return 'U';
+        }
+
+        if ($upper === 'R' || strpos($upper, 'RUR') === 0) {
+            return 'R';
+        }
+
+        return substr($upper, 0, 1) === 'R' ? 'R' : 'U';
+    }
+private function formatDate(?string $value): string
     {
         if (empty($value)) return '';
         $parts = explode('-', substr($value, 0, 10));

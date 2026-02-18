@@ -74,6 +74,25 @@ Este archivo registra los cambios funcionales y tecnicos realizados en este proy
   - `municipios`
 - Motivo: evitar perdida de filas por relaciones incompletas en MySQL y mantener la estrategia de completar campos en blanco cuando falte informacion.
 
+### Ajuste campo 79 FURIPS1 (2026-02-17)
+
+- Se normaliza el campo 79 (`zona_traslados`) para enviar solo inicial:
+  - `URBANA` -> `U`
+  - `RURAL` -> `R`
+  - Si ya viene `U` o `R`, se conserva.
+- Implementacion en `src/FuripsJobManager.php`:
+  - Campo 79 en `buildLineOne` ahora usa `normalizeZonaTraslados(...)`.
+  - Se agrega metodo `normalizeZonaTraslados()` para estandarizar el valor.
+
+### Blindaje de respuesta JSON API (2026-02-17)
+
+- Se ajustan `api/generate.php` y `api/entities.php` para evitar que warnings/notices rompan la respuesta JSON del frontend.
+- Cambios aplicados:
+  - `display_errors=0` y `display_startup_errors=0` en endpoints API.
+  - `ob_start()` al inicio y limpieza de salida accidental antes de responder JSON.
+  - Registro del contenido no esperado en log/error_log para diagnostico sin romper la UI.
+- Motivo: se presentaba mensaje `Respuesta invalida del servidor` cuando aparecia un warning de Firebird (`ibase_fetch_assoc`) antes del JSON.
+
 ## Convencion sugerida para siguientes cambios
 
 - Registrar fecha (`YYYY-MM-DD`), archivo(s) tocados y motivo del ajuste.

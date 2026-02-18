@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
-ini_set('display_errors', '1');
-ini_set('display_startup_errors', '1');
+ini_set('display_errors', '0');
+ini_set('display_startup_errors', '0');
+ini_set('log_errors', '1');
 error_reporting(E_ALL);
+ob_start();
 
 function logDebug(string $message): void
 {
@@ -41,6 +43,13 @@ function utf8ize($value)
 }
 function respond(array $payload): void
 {
+    $noise = trim((string) ob_get_contents());
+    if ($noise !== '') {
+        logDebug('Output no esperado limpiado antes de JSON: ' . substr($noise, 0, 800));
+    }
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;
