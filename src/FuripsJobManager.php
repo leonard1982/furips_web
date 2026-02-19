@@ -241,6 +241,15 @@ final class FuripsJobManager
         $soat = in_array($estado, ['1', '4', '6'], true) ? $this->formatSoat($row) : ['', ''];
         $numPoliza = in_array($estado, ['1', '4', '6'], true) ? ($row['NUMERO_POLIZA'] ?? '') : '';
 
+        $depAccidente = $this->normalizeDeptCode(
+            $row['COD_DEPTO'] ?? '',
+            substr((string) ($row['COD_MUNICIPIO'] ?? ''), 0, 2)
+        );
+        $munAccidente = $this->normalizeMunicipioCode(
+            substr((string) ($row['COD_MUNICIPIO'] ?? ''), 2, 3),
+            $row['COD_MUNICIPIO'] ?? ''
+        );
+
         $victima = [
             'ap1' => $clinical['APELL1'] ?? '',
             'ap2' => $clinical['APELL2'] ?? '',
@@ -252,8 +261,14 @@ final class FuripsJobManager
             'sexo' => $clinical['SEXO'] ?? ($row['SEXO'] ?? ''),
             'dir' => $clinical['DIRECCION'] ?? ($row['DIRECCION_PROPIETARIO'] ?? ''),
             'tel' => $clinical['TELEFONO'] ?? ($row['TELEFONO_PROPIETARIO'] ?? ''),
-            'dep' => $clinical['DEP'] ?? ($row['DEPARTAMENTO_PROPIETARIO'] ?? ($row['COD_DEPTO'] ?? '')),
-            'mun' => $clinical['MUN'] ?? ($row['MUNICIPIO_PROPIETARIO'] ?? substr($row['COD_MUNICIPIO'] ?? '', 2, 3)),
+            'dep' => $this->normalizeDeptCode(
+                $clinical['DEP'] ?? ($row['DEPARTAMENTO_PROPIETARIO'] ?? ''),
+                $depAccidente
+            ),
+            'mun' => $this->normalizeMunicipioCode(
+                $clinical['MUN'] ?? ($row['MUNICIPIO_PROPIETARIO'] ?? ''),
+                $munAccidente
+            ),
         ];
 
         $prop = [
@@ -265,8 +280,8 @@ final class FuripsJobManager
             'doc' => $row['N_DOCUMENTO_PROPIETARIO'] ?? '',
             'dir' => $row['DIRECCION_PROPIETARIO'] ?? '',
             'tel' => $row['TELEFONO_PROPIETARIO'] ?? '',
-            'dep' => $row['DEPARTAMENTO_PROPIETARIO'] ?? ($row['COD_DEPTO'] ?? ''),
-            'mun' => $row['MUNICIPIO_PROPIETARIO'] ?? substr($row['COD_MUNICIPIO'] ?? '', 2, 3),
+            'dep' => $this->normalizeDeptCode($row['DEPARTAMENTO_PROPIETARIO'] ?? '', $depAccidente),
+            'mun' => $this->normalizeMunicipioCode($row['MUNICIPIO_PROPIETARIO'] ?? '', $munAccidente),
         ];
         if (strtoupper($row['VICTIMA_PROPIETARIO'] ?? '') === 'SI') {
             $prop = $victima;
@@ -281,15 +296,12 @@ final class FuripsJobManager
             'doc' => $row['N_DOCUMENTO_CONDUCTOR'] ?? '',
             'dir' => $row['DIRECCION_CONDUCTOR'] ?? '',
             'tel' => $row['TELEFONO_CONDUCTOR'] ?? '',
-            'dep' => $row['DEPARTAMENTO_CONDUCTOR'] ?? ($row['COD_DEPTO'] ?? ''),
-            'mun' => $row['MUNICIPIO_CONDUCTOR'] ?? substr($row['COD_MUNICIPIO'] ?? '', 2, 3),
+            'dep' => $this->normalizeDeptCode($row['DEPARTAMENTO_CONDUCTOR'] ?? '', $depAccidente),
+            'mun' => $this->normalizeMunicipioCode($row['MUNICIPIO_CONDUCTOR'] ?? '', $munAccidente),
         ];
         if (strtoupper($row['VICTIMA_CONDUCTOR'] ?? '') === 'SI') {
             $cond = $victima;
         }
-
-        $depAccidente = $row['COD_DEPTO'] ?? '';
-        $munAccidente = substr($row['COD_MUNICIPIO'] ?? '', 2, 3);
 
         $codDiag = $clinical['COD_DIAG'] ?? ($row['COD_DIAGNOSTICO'] ?? '');
         $diagSec = $clinical['COD_DIAG_SEC'] ?? $codDiag;
@@ -658,6 +670,58 @@ SQL;
         }
     }
 
+    private function normalizeDeptCode(?string $value, ?string $fallback = ''): string
+    {
+        $candidate = preg_replace('/\D+/', '', trim((string) ($value ?? '')));
+        if ($candidate === null) {
+            $candidate = '';
+        }
+
+        if ($candidate === '' || intval($candidate) === 0) {
+            $candidate = preg_replace('/\D+/', '', trim((string) ($fallback ?? '')));
+            if ($candidate === null) {
+                $candidate = '';
+            }
+        }
+
+        if ($candidate === '') {
+            return '';
+        }
+
+        if (strlen($candidate) > 2) {
+            $candidate = substr($candidate, 0, 2);
+        }
+
+        return str_pad($candidate, 2, '0', STR_PAD_LEFT);
+    }
+
+    private function normalizeMunicipioCode(?string $value, ?string $fallback = ''): string
+    {
+        $candidate = preg_replace('/\D+/', '', trim((string) ($value ?? '')));
+        if ($candidate === null) {
+            $candidate = '';
+        }
+
+        if (strlen($candidate) > 3) {
+            $candidate = substr($candidate, -3);
+        }
+
+        if ($candidate === '' || intval($candidate) === 0) {
+            $candidate = preg_replace('/\D+/', '', trim((string) ($fallback ?? '')));
+            if ($candidate === null) {
+                $candidate = '';
+            }
+            if (strlen($candidate) > 3) {
+                $candidate = substr($candidate, -3);
+            }
+        }
+
+        if ($candidate === '') {
+            return '';
+        }
+
+        return str_pad($candidate, 3, '0', STR_PAD_LEFT);
+    }
     private function normalizeZonaTraslados(?string $value): string
     {
         $upper = strtoupper(trim((string) ($value ?? '')));
@@ -675,7 +739,8 @@ SQL;
 
         return substr($upper, 0, 1) === 'R' ? 'R' : 'U';
     }
-private function formatDate(?string $value): string
+
+    private function formatDate(?string $value): string
     {
         if (empty($value)) return '';
         $parts = explode('-', substr($value, 0, 10));

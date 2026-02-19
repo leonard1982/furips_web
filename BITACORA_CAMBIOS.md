@@ -93,6 +93,19 @@ Este archivo registra los cambios funcionales y tecnicos realizados en este proy
   - Registro del contenido no esperado en log/error_log para diagnostico sin romper la UI.
 - Motivo: se presentaba mensaje `Respuesta invalida del servidor` cuando aparecia un warning de Firebird (`ibase_fetch_assoc`) antes del JSON.
 
+### Ajuste codigos dpto/municipio en campos 16/17, 52/53, 61/62 (2026-02-19)
+
+- Se corrige la asignacion de codigos geograficos cuando llegan valores `00`, `000` o vacios desde MySQL.
+- Implementacion en `src/FuripsJobManager.php`:
+  - En `buildLineOne` se recalcula el fallback de ubicacion con base en `COD_DEPTO` y `COD_MUNICIPIO`.
+  - Los bloques de victima, conductor y propietario ahora normalizan `dep/mun` con fallback en vez de tomar directo `DEPARTAMENTO_*` / `MUNICIPIO_*`.
+  - Se agregan metodos:
+    - `normalizeDeptCode(...)`
+    - `normalizeMunicipioCode(...)`
+- Resultado esperado:
+  - Campo 16/17: no debe salir en `00`/vacio si existe codigo valido de respaldo.
+  - Campos 52/53 y 61/62: mismo comportamiento de normalizacion.
+
 ## Convencion sugerida para siguientes cambios
 
 - Registrar fecha (`YYYY-MM-DD`), archivo(s) tocados y motivo del ajuste.
